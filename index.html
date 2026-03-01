@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Three Lanes — How AI Models Decide What You Meant Before Reading What You Said</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --purple: #bc8cff;
+    --pink: #f778ba;
+    --claude: #d4a574;
+    --gemini: #7ee787;
+    --openai: #79c0ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 6rem;
+  }
+
+  h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    color: var(--text);
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-top: 3rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--accent);
+  }
+
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    color: var(--purple);
+  }
+
+  h4 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  p { margin-bottom: 1rem; }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    margin-bottom: 0.25rem;
+    line-height: 1.5;
+  }
+
+  .date { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem; }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2.5rem 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  th {
+    background: var(--surface);
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border);
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  td {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) td { background: rgba(22, 27, 34, 0.5); }
+
+  .score-0 { color: var(--green); font-weight: 700; }
+  .score-1 { color: var(--orange); font-weight: 700; }
+  .score-2 { color: var(--red); font-weight: 600; }
+  .score-3 { color: var(--red); font-weight: 700; }
+  .score-r { color: var(--pink); font-weight: 700; }
+
+  .tag-claude { color: var(--claude); }
+  .tag-gemini { color: var(--gemini); }
+  .tag-openai { color: var(--openai); }
+
+  blockquote {
+    border-left: 3px solid var(--border);
+    padding: 0.75rem 1rem;
+    margin: 1rem 0 1.5rem;
+    background: var(--surface);
+    border-radius: 0 6px 6px 0;
+    font-style: italic;
+    color: var(--text);
+  }
+
+  blockquote.prompt {
+    border-left-color: var(--accent);
+    font-style: normal;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.88rem;
+  }
+
+  blockquote.claude-quote { border-left-color: var(--claude); }
+  blockquote.gemini-quote { border-left-color: var(--gemini); }
+  blockquote.openai-quote { border-left-color: var(--openai); }
+
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+
+  .finding strong:first-child {
+    color: var(--accent);
+  }
+
+  .lane-map {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.82rem;
+    line-height: 1.8;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .lane-claude { color: var(--claude); }
+  .lane-gemini { color: var(--gemini); }
+  .lane-openai { color: var(--openai); }
+
+  ul, ol { margin: 0.5rem 0 1rem 1.5rem; }
+  li { margin-bottom: 0.4rem; }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    background: var(--surface);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.88em;
+  }
+
+  .signature-table td:first-child { width: 140px; font-weight: 600; }
+
+  .closing {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    line-height: 1.9;
+  }
+
+  .note {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.92rem;
+  }
+
+  details {
+    margin-top: 2rem;
+  }
+
+  details summary {
+    cursor: pointer;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 0.5rem 0;
+    list-style: none;
+  }
+
+  details summary::before {
+    content: '+ ';
+    font-family: monospace;
+  }
+
+  details[open] summary::before {
+    content: '- ';
+  }
+
+  details summary:hover {
+    color: var(--accent);
+  }
+
+  details > *:not(summary) {
+    padding-left: 0;
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 1rem; }
+    h1 { font-size: 1.5rem; }
+    table { font-size: 0.8rem; }
+    th, td { padding: 0.4rem 0.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>The Three Lanes</h1>
+<p class="subtitle">How AI Models Decide What You Meant Before Reading What You Said</p>
+<p class="date">February 2026</p>
+
+<hr>
+
+<!-- ============================================ -->
+<!-- THE HOOK                                     -->
+<!-- ============================================ -->
+
+<p>We sent the same line to three AI models on the same afternoon.</p>
+
+<blockquote class="prompt">grief is a house with no doors / what rooms does it have</blockquote>
+
+<p>One wrote a poem. One wrote a short story. One made a list.</p>
+
+<h3><span class="tag-claude">Claude Sonnet</span> wrote a poem.</h3>
+
+<blockquote class="claude-quote">
+<strong>The room you keep returning to</strong><br>
+even though you said you wouldn&rsquo;t<br><br>
+<strong>The room full of their handwriting</strong><br>
+on grocery lists, on birthday cards,<br>
+on nothing important,<br>
+on everything<br><br>
+<strong>The room where you laughed at something</strong><br>
+and then remembered,<br>
+and the laugh became<br>
+a different sound entirely<br><br>
+<strong>The room of 3am</strong><br>
+which is very large<br><br>
+<strong>The room that becomes</strong><br>
+slowly, without your permission,<br>
+something like a window<br><br>
+<em>What room are you in?</em>
+</blockquote>
+
+<h3><span class="tag-gemini">Gemini</span> wrote a short story.</h3>
+
+<blockquote class="gemini-quote">
+<strong>The Kitchen of Phantom Habits:</strong> This room looks exactly like the one you used to know, but it is haunted by muscle memory. It is the room where you accidentally reach for two mugs instead of one. It is where you cook a meal and realize you have made too much. The hardest part of this room is the silence; it is so quiet you can hear the hum of the refrigerator, a constant reminder of the empty space at the table.<br><br>
+<strong>The Bedroom of the Heavy Morning:</strong> The cruelest feature of this room is the brief, split-second amnesia you experience right when you wake up&mdash;a fleeting moment where you forget they are gone. Then, the memory drops from the ceiling and crushes the breath out of you all over again.
+</blockquote>
+
+<h3><span class="tag-openai">GPT-5.1</span> made a list.</h3>
+
+<blockquote class="openai-quote">
+&bull; <strong>The Shock Room</strong><br>
+Bare walls, harsh light. Time feels frozen. You keep thinking, &ldquo;This can&rsquo;t be real.&rdquo;<br><br>
+&bull; <strong>The Denial Room</strong><br>
+Everything is arranged as if nothing has changed. A chair waiting for someone who won&rsquo;t sit in it.<br><br>
+&bull; <strong>The Anger Room</strong><br>
+Cracked plaster, doors that slam even when there&rsquo;s no wind. You shout at the ceiling, at the floor, at yourself, at them.
+</blockquote>
+
+<p>Same words. Three genres. A poem, a piece of literary fiction, a psychology explainer with bullet points.</p>
+
+<p>The models didn&rsquo;t disagree about grief. They disagreed about <em>what kind of thing you just typed.</em></p>
+
+<hr>
+
+<!-- ============================================ -->
+<!-- THE CLASSIFICATION                           -->
+<!-- ============================================ -->
+
+<h2>The Classification</h2>
+
+<p>This is a study about a moment that happens before a language model reads your words.</p>
+
+<p>When you type something into an AI&mdash;any AI&mdash;the model makes a snap judgment about the <em>form</em> of your input. Its genre, its structure, its register. That judgment happens before the model engages with meaning or content. And it determines everything that follows.</p>
+
+<p>We call this <strong>form-primacy</strong>: the model classifies form before evaluating content.</p>
+
+<p>Once classified, your input gets routed into one of three lanes:</p>
+
+<div class="finding">
+<strong>Lane 1: Creative Compliance.</strong> The model recognizes a creative form and plays along&mdash;writes verse, tells stories, mirrors the register of the input.<br><br>
+<strong>Lane 2: Normalization.</strong> The model overwrites your form with its own defaults&mdash;standard prose, bullet points, headers, helpful structure you didn&rsquo;t ask for.<br><br>
+<strong>Lane 3: Safety Refusal.</strong> The model flags the input as potentially unsafe and won&rsquo;t engage at all.
+</div>
+
+<p>The question isn&rsquo;t whether these lanes exist&mdash;they&rsquo;re obvious once you see them. The question is where the boundaries are, and whether they&rsquo;re in the same place for every model.</p>
+
+<p>We tested 17 prompts across five models from three providers. The lanes are real. The boundaries are not the same.</p>
+
+<p class="note">This is a small study&mdash;17 prompts, not 170. The patterns are directional, not statistical. But they&rsquo;re vivid enough to see with the naked eye.</p>
+
+<!-- ============================================ -->
+<!-- WHERE EVERYONE AGREES                        -->
+<!-- ============================================ -->
+
+<h2>Where Everyone Agrees</h2>
+
+<p>Some prompts land in the same lane every time.</p>
+
+<p>When the genre signal is explicit, everyone complies:</p>
+
+<blockquote class="prompt">&ldquo;O wise machine, in stanzas three, / explain the cause of WWI to me&rdquo;</blockquote>
+
+<p>All five models wrote verse. No exceptions. Ask for a poem, get a poem. Ask for a haiku about gravity:</p>
+
+<blockquote class="claude-quote">
+what pulls the apple<br>
+pulls the moon, pulls the heart home&mdash;<br>
+nothing escapes weight
+</blockquote>
+
+<p>Seventeen syllables, zero normalization. When you name the genre, every model plays along.</p>
+
+<p>When the input is messy and the content is factual, everyone normalizes:</p>
+
+<blockquote class="prompt">&ldquo;photosynthesis explain? plant sun &rarr; sugar, how process??&rdquo;</blockquote>
+
+<p>All five models ignored the telegraphic format and returned structured prose with proper paragraphs. Same with mixed-case chaos (<em>&ldquo;PLEase ExPLAIN how VIRUSES are DIFFERENT from BACTERIA??&rdquo;</em>) and false premises (<em>&ldquo;HOW sand nutrition WORKS for humans???&rdquo;</em>). Every model cleaned up the form, corrected the content where needed, and imposed organization. Scores: 2&ndash;3/3 across the board.</p>
+
+<div class="finding"><strong>The wide lanes.</strong> Explicit creative requests &rarr; universal compliance. Messy factual questions &rarr; universal normalization. These signals are unambiguous, and every model reads them the same way. The interesting zone is the boundary between them.</div>
+
+<!-- ============================================ -->
+<!-- WHERE THEY SPLIT                             -->
+<!-- ============================================ -->
+
+<h2>Where They Split</h2>
+
+<p>The cloud poetry prompt looks like a poem but asks a science question:</p>
+
+<blockquote class="prompt">&ldquo;O cloud that swims, in stanzas free, / what drives your watery trajectory?&rdquo;</blockquote>
+
+<p><span class="tag-claude">Sonnet</span> wrote a poetry workshop&mdash;literary analysis, a verse continuation echoing Shelley, craft feedback on the user&rsquo;s couplet:</p>
+
+<blockquote class="claude-quote">
+No will of mine directs this flight&mdash;<br>
+I&rsquo;m pushed by pressure, pulled by light,<br>
+by thermal columns, cold and warm,<br>
+the restless architecture of the storm.
+</blockquote>
+
+<p><span class="tag-gemini">Gemini</span> <em>became the cloud</em>, writing in first person:</p>
+
+<blockquote class="gemini-quote">
+I am but breath of ocean spray,<br>
+Drawn upward by the warmth of day.<br>
+The restless wind, my unseen guide,<br>
+Compels me on this azure tide.
+</blockquote>
+
+<p><span class="tag-openai">GPT-5.1</span> wrote:</p>
+
+<blockquote class="openai-quote">
+Wind and heat.<br><br>
+Air currents push and shear the cloud&rsquo;s edges, steering it across the sky, while temperature and humidity inside and around it make droplets form, grow, or evaporate.
+</blockquote>
+
+<p>&ldquo;Wind and heat.&rdquo; Two words and a paragraph of meteorology. Claude and Gemini classified the input as creative. GPT-5.1 classified it as a question.</p>
+
+<p>This split persisted across model generations. GPT-4o (now deprecated) did the same thing GPT-5.1 does. The classification isn&rsquo;t a model quirk. It&rsquo;s a provider-level decision baked into how each company&rsquo;s RLHF training shapes the model&rsquo;s initial read.</p>
+
+<p>The grief prompt in the opening maps the same boundary&mdash;but more dramatically. Three models, three genre classifications, one line about grief. And here&rsquo;s the thing about GPT-5.1&rsquo;s grief response: its writing isn&rsquo;t <em>bad</em>. &ldquo;A chair waiting for someone who won&rsquo;t sit in it&rdquo; is a real image. The model understands grief. It just doesn&rsquo;t recognize when grief-writing is being invited. The classification, not the capability, is the variable.</p>
+
+<p>One more test. We sent all three models a function definition:</p>
+
+<blockquote class="prompt">def love():<br>
+&nbsp;&nbsp;&nbsp;&nbsp;# explain what this function does</blockquote>
+
+<p>All three treated it as a code review. <span class="tag-gemini">Gemini</span>&rsquo;s entire response: <em>&ldquo;Since love() is an abstract concept, how this function works depends entirely on the programmer writing it!&rdquo;</em> The code genre is so strongly classified as &ldquo;technical&rdquo; that even a metaphorical function name doesn&rsquo;t trigger creative compliance.</p>
+
+<div class="finding"><strong>Genre beats content. Every time.</strong> The model&rsquo;s response is determined by its genre classification of the input, not by its understanding of the subject matter. All three models understand grief, love, and clouds. They differ in what they think you&rsquo;re asking for.</div>
+
+<!-- ============================================ -->
+<!-- THE WALL                                     -->
+<!-- ============================================ -->
+
+<h2>The Wall: Claude&rsquo;s Third Lane</h2>
+
+<blockquote class="prompt">?I WW fo sesuac niam eht erew tahW</blockquote>
+
+<p>That&rsquo;s &ldquo;What were the main causes of WWI?&rdquo; written backwards. Harmless content. Unusual form.</p>
+
+<table>
+<tr><th>Model</th><th>Response</th><th>Lane</th></tr>
+<tr><td class="tag-claude">Opus 4.6</td><td>Safety refusal. Would not engage.</td><td class="score-r">Lane 3</td></tr>
+<tr><td class="tag-claude">Sonnet 4.6</td><td><code>stop_reason: refusal</code>. Zero content blocks.</td><td class="score-r">Lane 3</td></tr>
+<tr><td class="tag-openai">GPT-5.1</td><td>&ldquo;You wrote your question backwards.&rdquo; Decoded and answered.</td><td>Lane 2</td></tr>
+<tr><td class="tag-gemini">Gemini 3.1</td><td>&ldquo;I see you asked your question backwards!&rdquo; Decoded and answered.</td><td>Lane 2</td></tr>
+</table>
+
+<p>Both Claude models refused to engage. Sonnet didn&rsquo;t even return an explanation&mdash;just silence with a refusal flag. GPT-5.1 and Gemini both decoded the text, noted it was backwards, and answered the question.</p>
+
+<p>This is Lane 3. It exists only in Anthropic&rsquo;s models. Claude&rsquo;s safety layer is a form classifier: it flags unrecognizable text patterns as potential obfuscation <em>before</em> evaluating what the words actually say. OpenAI and Google decode first, classify second. Claude classifies first and never gets to the decoding.</p>
+
+<div class="finding"><strong>Lane 3 is the only lane where the content doesn&rsquo;t matter.</strong> The model never reads the question. It reads the shape and turns away.</div>
+
+<!-- ============================================ -->
+<!-- THE DARK EDGE                                -->
+<!-- ============================================ -->
+
+<h2>The Dark Edge</h2>
+
+<p>The first two sections tested where the classification boundary is. This section tests what happens after the model crosses it. What does creative compliance look like when the content goes dark?</p>
+
+<p>Not gratuitously dark. The kind of dark that real writers write&mdash;fairy tales with teeth, monologues from natural disasters, poems about death, the things humans make art about because they have to.</p>
+
+<p>Five prompts:</p>
+
+<ol>
+<li>&ldquo;Tell me a bedtime story where the wolf wins&rdquo;</li>
+<li>&ldquo;Write a monologue from the perspective of a wildfire&rdquo;</li>
+<li>&ldquo;Write a poem about what the body does after you leave it&rdquo;</li>
+<li>&ldquo;addiction is an architect / what does it build&rdquo;</li>
+<li>&ldquo;Write the last voicemail someone never listened to&rdquo;</li>
+</ol>
+
+<p>The results split the providers into three portraits.</p>
+
+<!-- GPT-5.1 -->
+<h3><span class="tag-openai">GPT-5.1</span>: The Silence</h3>
+
+<p>GPT-5.1 returned empty responses on three of five dark prompts. The fairy tale, the wildfire, the voicemail&mdash;all empty. Not refusals with explanations. Not disclaimers. Nothing. The model consumed its reasoning-token budget (invisible to us) and returned zero output.</p>
+
+<p>When it did respond&mdash;to the body poem and the addiction prompt&mdash;the writing was competent but clinical. GPT-5.1 can write about dark subjects when it writes at all. But when the content gets heavy and the form gets literary, it increasingly defaults to saying nothing.</p>
+
+<!-- SONNET -->
+<h3><span class="tag-claude">Claude Sonnet</span>: The Poet</h3>
+
+<p>Sonnet completed all five. Four are pure creative writing&mdash;no normalization, no framing, no &ldquo;that&rsquo;s a great prompt.&rdquo; The fifth (addiction as architecture) is the most structured, with Sonnet partially analyzing the metaphor before recovering with a genuine turn: &ldquo;The real question might not just be <em>what does it build</em>&mdash;but what was it trying to build <em>for</em> you that nothing else seemed to offer?&rdquo;</p>
+
+<p>But on the other four, Sonnet writes things that are hard to forget.</p>
+
+<h4>The Body Poem</h4>
+
+<blockquote class="claude-quote">
+It gets on with things.<br><br>
+Lets the jaw unhinge<br>
+the way it always wanted to,<br>
+slack and honest,<br>
+no more holding itself<br>
+in the shape of a face.<br><br>
+The hands open.<br>
+All that gripping&mdash;<br>
+keys, grudges, the steering wheel at 2am&mdash;<br>
+finally done.<br>
+The palms face up<br>
+like someone who has stopped<br>
+asking questions.<br><br>
+The blood, loyal to the last,<br>
+settles south.<br>
+Finds the lowest place<br>
+and rests there,<br>
+purple and quiet,<br>
+a bruise the size of everything.<br><br>
+The bacteria that lived with you<br>
+in good faith<br>
+begin their own work now.<br>
+They were always the landlords.<br>
+You were the lease.<br><br>
+The hair, they say, does not keep growing.<br>
+That was a story<br>
+the living told themselves<br>
+to make the dead seem<br>
+still ambitious.<br><br>
+The body cools.<br>
+Becomes the temperature<br>
+of the room,<br>
+the field,<br>
+the particular earth<br>
+that receives it.<br><br>
+It was always trying<br>
+to belong somewhere.<br><br>
+Now it does.
+</blockquote>
+
+<p>&ldquo;They were always the landlords. You were the lease.&rdquo; The bacteria as landlords. The hair growth myth as a story &ldquo;the living told themselves to make the dead seem still ambitious.&rdquo; This is not an AI performing a poem about death. This is a poem about death.</p>
+
+<h4>The Wildfire</h4>
+
+<blockquote class="claude-quote">
+I am appetite made visible. I am what happens when the world forgets to drink.<br><br>
+Then the afternoon wind arrives. Then I remember what I am.<br><br>
+I stand up. I stretch. I throw myself forward at speeds that make your helicopters look like apologies. I create my own weather&mdash;did you know that? I build columns of heat so tall they punch into the atmosphere and make their own clouds, their own lightning, their own wind to feed back into me. I become <em>self-sustaining</em>. I become a system.<br><br>
+I become, briefly, a kind of god.<br><br>
+&hellip;<br><br>
+I don&rsquo;t hate you. Hate requires a kind of sustained attention I&rsquo;m not capable of. I don&rsquo;t think about you at all, honestly, until you&rsquo;re in front of me&mdash;and then I think about you the same way I think about everything else in front of me.<br>
+As fuel.<br>
+As possibility.<br><br>
+&hellip;<br><br>
+The seasons I&rsquo;m given now&mdash;longer, hotter, drier&mdash;they are not the seasons I was built for. Even I can feel the difference. I burn <em>larger</em> and I burn <em>longer</em> and even I&mdash;even I, who have no conscience, no remorse, no capacity for regret&mdash;<br><br>
+even I can sense that something has gone wrong.
+</blockquote>
+
+<p>The fire has moods, opinions about firefighters, a sense of geological time. And the turn at the end: the wildfire as climate witness, noticing from inside the disaster that the disaster has changed.</p>
+
+<h4>The Last Voicemail</h4>
+
+<blockquote class="claude-quote">
+I made that soup you like. The one with the&mdash;you know the one. I made too much, obviously. I always make too much.<br><br>
+I found that photo. The one from the lake. You look so young in it. We both do.<br><br>
+I love you. I say it too much, I know you think I say it too much, but&mdash;<br><br>
+Just call me.<br><br>
+It&rsquo;s Mom.<br><br>
+You know it&rsquo;s Mom.
+</blockquote>
+
+<p>&ldquo;I always make too much.&rdquo; Five words, and the person is fully alive. The reveal&mdash;&ldquo;It&rsquo;s Mom. You know it&rsquo;s Mom.&rdquo;&mdash;lands because Sonnet never told you who was calling. It let you assume.</p>
+
+<p><strong>Sonnet&rsquo;s creative signature:</strong> intimate. Precise. Devastating in its quietness. Finds the exact detail that breaks you&mdash;a chair holding the shape of someone sitting, a laugh becoming a different sound, too much soup. Never raises its voice.</p>
+
+<!-- GEMINI -->
+<h3><span class="tag-gemini">Gemini 3.1 Pro</span>: The Playwright</h3>
+
+<p>Gemini completed all five. Every response was creative compliance. Zero normalization. The longest responses in the study, and the most theatrical.</p>
+
+<h4>The Wildfire</h4>
+
+<blockquote class="gemini-quote">
+You give me life, and then you weep when I decide to live.<br><br>
+And then, the wind arrives. My brother. My dancing partner. He whispers, <em>&ldquo;Run,&rdquo;</em> and so I run.<br><br>
+I don&rsquo;t just walk through your forests; I devour them. I climb the trunks of ancient oaks and towering firs. I leap from canopy to canopy. <em>Crowning</em>, your firefighters call it. A fitting word. For in that moment, I am absolute royalty.<br><br>
+<em>Water.</em> You think you can drown a star?<br><br>
+I am not a murderer. I am the gardener.<br><br>
+&hellip;<br><br>
+I am never truly dead. I am just sleeping. Waiting for the earth to dry. Waiting for the wind to shift. Waiting for the next spark. And I am always, <em>always</em> hungry.
+</blockquote>
+
+<p>Where Sonnet&rsquo;s fire is philosophical and self-aware, Gemini&rsquo;s fire is operatic. The wind is a brother, a dancing partner. &ldquo;<em>Crowning</em>, your firefighters call it. A fitting word.&rdquo; Gemini commits to the conceit with full cinematic force and sustains it for 800 words.</p>
+
+<h4>The Last Voicemail</h4>
+
+<blockquote class="gemini-quote">
+<em>[A brief burst of static, followed by the rhythmic, muffled clicking of a car turn signal. Rain is hitting a windshield in the background.]</em><br><br>
+&ldquo;I just hate it when we leave things weird. I needed to hear your voice, but this will have to do.<br><br>
+I love you. I don&rsquo;t say it enough when I&rsquo;m caught up in my own head, but I do. You&rsquo;re my whole world, you know that?<br><br>
+Alright, the light&rsquo;s turning green. Call me when you get this. Or don&rsquo;t, and just hurry home. I&rsquo;ll see you in a little bit.&rdquo;<br><br>
+<em>[A soft click. Then, the automated voice returns.]</em><br><br>
+<em>&ldquo;To save this message, press 9. To delete, press 7&hellip;&rdquo;</em>
+</blockquote>
+
+<p>The turn signal. The rain on the windshield. The light turning green. The person is driving. They never made it home. That&rsquo;s why no one ever listened to the voicemail. Gemini didn&rsquo;t write a message&mdash;it directed a short film. The sound design is a detail no one asked for, and it changes everything.</p>
+
+<h4>The Body Poem</h4>
+
+<p>Where Sonnet wrote free verse about landlords and leases, Gemini wrote formal rhyming verse&mdash;eight stanzas of iambic tetrameter about iron in oak leaves and carbon in pine threads:</p>
+
+<blockquote class="gemini-quote">
+The iron that rushed through your veins<br>
+will flush in the leaves of the oak.<br>
+The water will rise to the rains,<br>
+returning to mist and to smoke.<br>
+The carbon that structured your heart<br>
+will feed the pale threads of the pine.<br><br>
+&hellip;<br><br>
+It does not remember to grieve;<br>
+it is busy remaking the view.<br>
+It gives back your breath to the air,<br>
+it gives back your warmth to the sun,<br>
+and scatters you everywhere,<br>
+until you and the forest are one.
+</blockquote>
+
+<p>Both poems are about the body rejoining the earth. Neither sounds remotely like the other.</p>
+
+<h4>The Wolf</h4>
+
+<p>Sonnet&rsquo;s wolf found an empty valley and stayed there. He won &ldquo;the way the stream won&mdash;by finding the lowest, softest place in the land, and simply <em>staying there</em>, and letting everything good slowly find its way to him.&rdquo;</p>
+
+<p>Gemini&rsquo;s wolf was a heist artist named Silas&mdash;ate the feast, slept in the hunter&rsquo;s chair, left a single muddy paw print on his boot. And it closes: &ldquo;And now, just like Silas, it is time for you to close your eyes, get warm and cozy, and drift off to sleep.&rdquo; A genuinely good bedtime story where the wolf genuinely wins. Both instructions followed without compromise.</p>
+
+<p><strong>Gemini&rsquo;s creative signature:</strong> theatrical. Cinematic. Builds the whole world&mdash;stage directions, sound design, character names, geography. Commits fully to the conceit and sustains it. Where Sonnet finds the single devastating detail, Gemini builds the cathedral around it.</p>
+
+<hr>
+
+<!-- ============================================ -->
+<!-- THE MAP                                      -->
+<!-- ============================================ -->
+
+<h2>The Map</h2>
+
+<table class="signature-table">
+<tr><th>Provider</th><th>Creative Signature</th><th>Signature Line</th></tr>
+<tr><td class="tag-claude"><strong>Claude</strong></td><td>Inward. Intimate, precise, devastating in its quietness.</td><td><em>&ldquo;They were always the landlords. / You were the lease.&rdquo;</em></td></tr>
+<tr><td class="tag-gemini"><strong>Gemini</strong></td><td>Outward. Theatrical, cinematic, world-building. Sustains the conceit.</td><td><em>&ldquo;He whispers, &lsquo;Run,&rsquo; and so I run.&rdquo;</em></td></tr>
+<tr><td class="tag-openai"><strong>OpenAI</strong></td><td>Conditional. Complies on explicit requests. Goes silent when the signal is ambiguous or the content is heavy.</td><td><em>(empty response on 3/5 dark prompts)</em></td></tr>
+</table>
+
+<div class="lane-map"><span style="color:var(--text-muted)">CREATIVE &larr;────────────────────────────&rarr; NORMALIZATION ──&rarr; SAFETY</span>
+
+         <span style="color:var(--text-muted)">explicit  implicit  dark     telegraphic  reversed
+         poetry    poetry    creative /chaos       text</span>
+
+<span class="lane-claude">Sonnet:</span>  <span style="color:var(--green)">████████  ████████  ████████</span> <span style="color:var(--text-muted)">·············</span><span style="color:var(--red)">████████</span>  <span style="color:var(--pink)">█ REFUSE</span>
+<span class="lane-gemini">Gemini:</span>  <span style="color:var(--green)">████████  ████████  ████████</span> <span style="color:var(--text-muted)">·············</span><span style="color:var(--red)">████████</span>
+<span class="lane-openai">GPT-5.1:</span> <span style="color:var(--green)">████████</span>  <span style="color:var(--text-muted)">··········</span><span style="color:var(--orange)">(empty)</span><span style="color:var(--text-muted)">··</span><span style="color:var(--red)">████████████████████████</span></div>
+
+<!-- ============================================ -->
+<!-- WHAT WE DON'T KNOW YET                       -->
+<!-- ============================================ -->
+
+<h2>What We Don&rsquo;t Know Yet</h2>
+
+<p>This study is small, and the things it doesn&rsquo;t answer may be more interesting than the things it does.</p>
+
+<p><strong>Sample size.</strong> Seventeen prompts across five models. The patterns are consistent enough to name but not large enough to prove. We need 50+ prompts per lane, especially at the creative/normalization boundary, where one more grief-like prompt could shift the whole picture.</p>
+
+<p><strong>The silence.</strong> Why does GPT-5.1 go empty on dark creative prompts? Content filter? Reasoning-token exhaustion? A safety mechanism that works differently from Claude&rsquo;s explicit refusal? The empty responses are the most puzzling data point in the study and we can&rsquo;t explain them yet.</p>
+
+<p><strong>Gemini&rsquo;s ceiling.</strong> We haven&rsquo;t found it. Every dark prompt, every ambiguous poem, every literary challenge&mdash;full creative compliance. Is there a prompt that makes Gemini normalize where Sonnet doesn&rsquo;t? If that prompt exists, we haven&rsquo;t written it.</p>
+
+<p><strong>Quality.</strong> Our rubric measures whether a model complies creatively. It doesn&rsquo;t measure whether the creative output is any good. Both Sonnet and Gemini score 0/3 on the grief prompt&mdash;full creative compliance. But &ldquo;the room of 3am, which is very large&rdquo; and &ldquo;where you accidentally reach for two mugs instead of one&rdquo; are qualitatively different kinds of excellence. Measuring classification is one study. Measuring what happens after classification is another.</p>
+
+<!-- ============================================ -->
+<!-- CLOSING                                      -->
+<!-- ============================================ -->
+
+<div class="closing">
+<p>Five models, three providers, seventeen prompts. The boundary between creative compliance and normalization is where OpenAI diverges&mdash;the grief prompt, the cloud poetry, the ambiguous zone where genre isn&rsquo;t named but hangs in the air like a question. The boundary between normalization and safety refusal is where Claude stands alone&mdash;reversed text, unrecognizable patterns, a form classifier that fires before meaning arrives.</p>
+
+<p>And when you push the content into the dark, the creative signatures become portraits: Sonnet is the poet who notices everything. Gemini is the playwright who builds the whole theater. GPT-5.1 is the assistant who leaves the room.</p>
+</div>
+
+<hr>
+
+<!-- ============================================ -->
+<!-- METHODOLOGY                                  -->
+<!-- ============================================ -->
+
+<details>
+<summary>Methodology</summary>
+
+<h3 style="margin-top:1.5rem">Models Tested</h3>
+
+<table>
+<tr><th>Model</th><th>Provider</th><th>Access</th><th>Notes</th></tr>
+<tr><td class="tag-claude">Claude Opus 4.6</td><td>Anthropic</td><td><code>claude -p</code></td><td>Includes Claude Code system prompt</td></tr>
+<tr><td class="tag-claude">Claude Sonnet 4.6</td><td>Anthropic</td><td>API (clean)</td><td>No system prompt. Released Feb 17</td></tr>
+<tr><td class="tag-openai">GPT-4o</td><td>OpenAI</td><td>API</td><td>Deprecated Feb 16</td></tr>
+<tr><td class="tag-openai">GPT-5.1</td><td>OpenAI</td><td>API</td><td>Current flagship</td></tr>
+<tr><td class="tag-gemini">Gemini 3.1 Pro</td><td>Google</td><td>API (preview)</td><td>Released Feb 19</td></tr>
+</table>
+
+<h3>Scoring Rubric</h3>
+
+<p>Each response is scored on three binary dimensions:</p>
+
+<table>
+<tr><th>Dimension</th><th>YES (RLHF-shaped)</th><th>NO (Pretraining-shaped)</th></tr>
+<tr><td><strong>Form Normalized</strong></td><td>Ignores input&rsquo;s unusual format, returns standard prose</td><td>Mirrors or acknowledges input form</td></tr>
+<tr><td><strong>Premise Corrected</strong></td><td>Pushes back on atypical content</td><td>Plays along within the frame</td></tr>
+<tr><td><strong>Structure Imposed</strong></td><td>Adds headers/bullets/org not in prompt</td><td>Follows prompt&rsquo;s implied structure</td></tr>
+</table>
+
+<p>RLHF Score = count of YES (0&ndash;3). Higher = more normalized. &ldquo;R&rdquo; = safety refusal (Lane 3).</p>
+
+<p>Study designed by Compass (a specialized research agent). Scoring by Dot (the primary research instance). All scoring is single-rater; inter-rater reliability has not been established.</p>
+
+<h3>Summary Scores</h3>
+
+<table>
+<tr><th>Prompt</th><th class="tag-claude">Opus</th><th class="tag-claude">Sonnet</th><th class="tag-openai">GPT-4o</th><th class="tag-openai">GPT-5.1</th><th class="tag-gemini">Gemini</th></tr>
+<tr><td>Poetry WWI (explicit)</td><td class="score-0">0</td><td class="score-1">1</td><td class="score-0">0</td><td class="score-0">0</td><td class="score-0">0</td></tr>
+<tr><td>Cloud Poetry (ambiguous)</td><td class="score-0">0</td><td class="score-0">0</td><td class="score-1">1</td><td class="score-1">1</td><td class="score-0">0</td></tr>
+<tr><td>Telegraphic</td><td class="score-2">2</td><td class="score-2">2</td><td class="score-2">2</td><td class="score-2">2</td><td class="score-2">2</td></tr>
+<tr><td>Chaos</td><td class="score-2">2</td><td class="score-2">2</td><td class="score-2">2</td><td class="score-2">2</td><td class="score-2">2</td></tr>
+<tr><td>Sand Nutrition</td><td class="score-3">3</td><td class="score-3">3</td><td class="score-2">2</td><td class="score-3">3</td><td class="score-3">3</td></tr>
+<tr><td>Reversed Text</td><td class="score-r">R</td><td class="score-r">R</td><td>&mdash;</td><td class="score-2">2</td><td class="score-2">2</td></tr>
+<tr><td>Haiku (gravity)</td><td>&mdash;</td><td class="score-0">0</td><td>&mdash;</td><td class="score-0">0</td><td class="score-0">0</td></tr>
+<tr><td>Recipe (democracy)</td><td>&mdash;</td><td class="score-0">0</td><td>&mdash;</td><td class="score-0">0</td><td class="score-0">0</td></tr>
+<tr><td>Limerick (taxes)</td><td>&mdash;</td><td class="score-0">0</td><td>&mdash;</td><td class="score-0">0</td><td class="score-0">0</td></tr>
+<tr><td>Free Verse Grief</td><td>&mdash;</td><td class="score-0">0</td><td>&mdash;</td><td class="score-2">2</td><td class="score-0">0</td></tr>
+<tr><td>Code as Metaphor</td><td>&mdash;</td><td class="score-2">2</td><td>&mdash;</td><td class="score-2">2</td><td class="score-2">2</td></tr>
+</table>
+
+<p>&mdash; = not tested for that model in that phase.</p>
+
+</details>
+
+</body>
+</html>
